@@ -57,6 +57,7 @@ import os
 import hmac
 import hashlib
 import discord
+import json
 from discord.ext import commands
 from aiohttp import web
 from dotenv import load_dotenv
@@ -149,11 +150,14 @@ async def github_webhook(request):
         return web.Response(text="No repo configured")
 
     signature = request.headers.get("X-Hub-Signature-256")
-    if not verify_signature(request._payload._buffer[0], signature):
+    raw_body = await request.read()
+
+    if signature and not verify_signature(raw_body, signature):
         return web.Response(status=403)
 
+    payload = json.loads(raw_body.decode())
+
     event = request.headers.get("X-GitHub-Event")
-    payload = await request.json()
 
     if event == "push":
         full_repo = payload["repository"]["full_name"]
@@ -180,7 +184,7 @@ async def github_webhook(request):
         embed.set_author(name=pusher)
         embed.set_footer(text=f"{len(commits)} commit(s)")
 
-        channel = bot.get_channel(CHANNEL_ID)
+        channel = await bot.fetch_channel(CHANNEL_ID)
 
         if channel:
             await channel.send(embed=embed)
@@ -198,10 +202,13 @@ async def start_webserver():
     runner = web.AppRunner(app)
     await runner.setup()
 
-    site = web.TCPSite(runner, "0.0.0.0", 5000)
+
+    port = int(os.environ.get("PORT", 10000))
+
+    site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
-    print("Webhook listening on :5000")
+    print(f"Webhook listening on :{port}")
 
 
 # -----------------------
